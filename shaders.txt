@@ -1,0 +1,134 @@
+// -*- glsl -*-
+
+// File containing GLSL shaders used to generate shaders.h.
+
+// At the start of each shader, write // followed by two equals signs,
+// followed by a space, the name of the shader and a newline.
+// Following that, write the shader code.
+
+// To terminate a shader, write // followed by another two equals
+// signs, this time without a trailing name or whitespace.
+
+//== Clear Rectangle Vertex Shader
+attribute vec2 pos;
+
+void
+main (void)
+{
+  gl_Position = vec4 (pos.x, pos.y, 1.0, 1.0);
+}
+//==
+
+//== Clear Rectangle Fragment Shader
+void
+main (void)
+{
+  gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
+}
+//==
+
+//== Composite Rectangle Vertex Shader
+precision mediump float;
+attribute vec2 pos;
+attribute vec2 texcoord;
+varying vec2 v_texcoord;
+uniform mat3 source;
+
+void
+main (void)
+{
+  gl_Position = vec4 (pos.x, pos.y, 1.0, 1.0);
+  v_texcoord = (source * vec3 (texcoord, 1.0)).xy;
+}
+//==
+
+//== Composite Rectangle Fragment Shader RGBA
+precision mediump float;
+uniform sampler2D texture;
+uniform bool invert_y;
+varying vec2 v_texcoord;
+
+void
+main (void)
+{
+  vec2 texcoord;
+
+  texcoord = v_texcoord;
+
+  if (invert_y)
+    texcoord = vec2 (texcoord.x, 1.0 - texcoord.y);
+
+  gl_FragColor = texture2D (texture, texcoord);
+}
+//==
+
+//== Composite Rectangle Fragment Shader RGBX
+precision mediump float;
+uniform sampler2D texture;
+uniform mat3 source;
+uniform bool invert_y;
+varying vec2 v_texcoord;
+
+void
+main (void)
+{
+  vec2 texcoord;
+
+  texcoord = v_texcoord;
+
+  if (invert_y)
+    texcoord = vec2 (texcoord.x, 1.0 - texcoord.y);
+
+  gl_FragColor = vec4 (texture2D (texture, texcoord).rgb, 1.0);
+}
+//==
+
+//== Composite Rectangle Fragment Shader External
+#extension GL_OES_EGL_image_external : require
+
+precision mediump float;
+uniform samplerExternalOES texture;
+uniform mat3 source;
+uniform bool invert_y;
+varying vec2 v_texcoord;
+
+void
+main (void)
+{
+  vec2 texcoord;
+
+  texcoord = v_texcoord;
+
+  if (invert_y)
+    texcoord = vec2 (texcoord.x, 1.0 - texcoord.y);
+
+  gl_FragColor = texture2D (texture, texcoord);
+}
+//==
+
+//== Composite Rectangle Fragment Shader Single Pixel
+#extension GL_OES_EGL_image_external : require
+
+precision mediump float;
+uniform vec4 source_color;
+uniform mat3 source;
+uniform bool invert_y;
+varying vec2 v_texcoord;
+
+void
+main (void)
+{
+  vec2 texcoord;
+
+  texcoord = v_texcoord;
+
+  if (invert_y)
+    texcoord = vec2 (texcoord.x, 1.0 - texcoord.y);
+
+  if (texcoord.x < 0.0 || texcoord.y < 0.0
+      || texcoord.x > 1.0 || texcoord.y > 1.0)
+    gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
+  else
+    gl_FragColor = source_color;
+}
+//==
