@@ -513,6 +513,26 @@ SendDecorationConfigure (XdgToplevel *toplevel)
 static void SendStates (XdgToplevel *);
 static void WriteStates (XdgToplevel *);
 
+/* Calculate the client surface size corresponding to WIDTH x HEIGHT.
+   When fullscreen, the client surface must fill the entire X window;
+   the usual geometry delta is invalid while the subcompositor still
+   contains the previous, non-fullscreen buffer.  */
+
+static void
+CalcWindowSize (XdgToplevel *toplevel, int width, int height,
+		int *new_width, int *new_height)
+{
+  if (toplevel->toplevel_state.fullscreen)
+    {
+      *new_width = width;
+      *new_height = height;
+      return;
+    }
+
+  XLXdgRoleCalcNewWindowSize (toplevel->role, width, height,
+			      new_width, new_height);
+}
+
 static void
 NoteConfigureTime (Timer *timer, void *data, struct timespec time)
 {
@@ -533,6 +553,15 @@ NoteConfigureTime (Timer *timer, void *data, struct timespec time)
       effective_width = toplevel->configure_width;
       effective_height = toplevel->configure_height;
 
+      /* The pending configure size can still describe the old,
+	 non-fullscreen window.  Fullscreen always uses the current
+	 window size.  */
+      if (toplevel->toplevel_state.fullscreen)
+	{
+	  effective_width = toplevel->width;
+	  effective_height = toplevel->height;
+	}
+
       /* toplevel->role->surface should not be NULL here, as the timer
 	 is cancelled upon role detachment.  */
       TruncateScaleToSurface (toplevel->role->surface,
@@ -541,10 +570,8 @@ NoteConfigureTime (Timer *timer, void *data, struct timespec time)
 
       /* Compute the geometry for the configure event based on the
 	 current size of the toplevel.  */
-      XLXdgRoleCalcNewWindowSize (toplevel->role,
-				  effective_width,
-				  effective_height,
-				  &width, &height);
+      CalcWindowSize (toplevel, effective_width, effective_height,
+		      &width, &height);
 
       /* Send the configure event.  */
       SendConfigure (toplevel, width, height);
@@ -641,8 +668,7 @@ CurrentWindowGeometry (XdgToplevel *toplevel,
 			  toplevel->height,
 			  width, height);
 
-  XLXdgRoleCalcNewWindowSize (toplevel->role, *width,
-			      *height, width, height);
+  CalcWindowSize (toplevel, *width, *height, width, height);
 }
 
 static void
@@ -931,6 +957,13 @@ HandleWindowGeometryChange (XdgToplevel *toplevel)
 
   if (!toplevel->role || !toplevel->role->surface)
     return;
+
+  /* A fullscreen window has no client-side decoration shadows.  */
+  if (toplevel->toplevel_state.fullscreen)
+    {
+      ApplyGtkFrameExtents (toplevel, 0, 0, 0, 0);
+      return;
+    }
 
   view = toplevel->role->surface->view;
   subcompositor = ViewGetSubcompositor (view);
@@ -1630,10 +1663,8 @@ HandleConfigureEvent (XdgToplevel *toplevel, XEvent *event)
 			      &configure_height);
 
       /* Calculate the new window size.  */
-      XLXdgRoleCalcNewWindowSize (toplevel->role,
-				  configure_width,
-				  configure_height,
-				  &width, &height);
+      CalcWindowSize (toplevel, configure_width, configure_height,
+		      &width, &height);
 
       SendConfigure (toplevel, width, height);
     }
@@ -1740,6 +1771,13 @@ NoteWindowPreResize (Role *role, XdgRoleImplementation *impl,
 
   if (!toplevel->role || !toplevel->role->surface)
     return;
+
+  /* A fullscreen window has no client-side decoration shadows.  */
+  if (toplevel->toplevel_state.fullscreen)
+    {
+      ApplyGtkFrameExtents (toplevel, 0, 0, 0, 0);
+      return;
+    }
 
   /* Set the GTK frame immediately before a resize.  This prevents the
      window manager from constraining us by the old values.  */
