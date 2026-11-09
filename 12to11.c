@@ -167,6 +167,8 @@ XLMain (int argc, char **argv)
   Display *dpy;
   struct wl_display *wl_display;
   const char *socket;
+  char socket_name[64];
+  int i;
 
   /* Set the locale.  */
   setlocale (LC_ALL, "");
@@ -183,7 +185,24 @@ XLMain (int argc, char **argv)
       exit (1);
     }
 
-  socket = wl_display_add_socket_auto (wl_display);
+  /* Do not create the default "wayland-0" socket.  GTK's Wayland backend
+     falls back to that name when WAYLAND_DISPLAY is unset, so its mere
+     presence makes every GTK application on this X11 session try to use the
+     translator as its compositor (settings dialogs, panel plugins, display
+     configuration, ...).  A private name keeps 12to11 invisible to clients
+     that have not explicitly selected it through WAYLAND_DISPLAY.  */
+  socket = NULL;
+
+  for (i = 0; i < 64; ++i)
+    {
+      snprintf (socket_name, sizeof socket_name, "wayland-12to11-%d", i);
+
+      if (wl_display_add_socket (wl_display, socket_name) == 0)
+	{
+	  socket = socket_name;
+	  break;
+	}
+    }
 
   if (!socket)
     {
