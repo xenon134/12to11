@@ -3850,43 +3850,24 @@ SendScrollAxis (Seat *seat, Surface *surface, Time time,
 	  pointer->info->last_enter_serial = serial;
 	}
 
-      if (wl_resource_get_version (pointer->resource) < 8
-	  /* Send pixel-wise axis events from devices that are most
-	     likely touchpads.  */
-	  || (deviceinfo
-	      && (deviceinfo->flags & DeviceCanFingerScroll
-		  || deviceinfo->flags & DeviceCanEdgeScroll)))
-	{
-	  /* Interpolate the increment-relative axis values to pixel
-	     values.  */
-	  InterpolateAxes (surface, deviceinfo, axis_x, axis_y,
-			   &axis_x, &axis_y);
+      {
+	/* Always send pixel-wise axis events.  Some clients (Brave in
+	   particular) ignore value120 events from devices that never
+	   announced an axis source, while the pixel path is what
+	   touchpads already use and is handled consistently.  */
+	InterpolateAxes (surface, deviceinfo, axis_x, axis_y,
+			 &axis_x, &axis_y);
 
-	  if (axis_x != 0.0)
-	    wl_pointer_send_axis (pointer->resource, time,
-				  WL_POINTER_AXIS_HORIZONTAL_SCROLL,
-				  wl_fixed_from_double (axis_x));
+	if (axis_x != 0.0)
+	  wl_pointer_send_axis (pointer->resource, time,
+				WL_POINTER_AXIS_HORIZONTAL_SCROLL,
+				wl_fixed_from_double (axis_x));
 
-	  if (axis_y != 0.0)
-	    wl_pointer_send_axis (pointer->resource, time,
-				  WL_POINTER_AXIS_VERTICAL_SCROLL,
-				  wl_fixed_from_double (axis_y));
-	}
-      else
-        {
-	  /* Send value120 events if they are available; those events
-	     make more sense.  */
-
-	  if (axis_x != 0.0)
-	    wl_pointer_send_axis_value120 (pointer->resource,
-					   WL_POINTER_AXIS_HORIZONTAL_SCROLL,
-					   axis_x * 120);
-
-	  if (axis_y != 0.0)
-	    wl_pointer_send_axis_value120 (pointer->resource,
-					   WL_POINTER_AXIS_VERTICAL_SCROLL,
-					   axis_y * 120);
-	}
+	if (axis_y != 0.0)
+	  wl_pointer_send_axis (pointer->resource, time,
+				WL_POINTER_AXIS_VERTICAL_SCROLL,
+				wl_fixed_from_double (axis_y));
+      }
 
       if (axis_y == 0.0 && axis_x == 0.0)
 	{
@@ -3920,6 +3901,13 @@ SendScrollAxis (Seat *seat, Surface *surface, Time time,
 		  || deviceinfo->flags & DeviceCanEdgeScroll))
 	    wl_pointer_send_axis_source (pointer->resource,
 					 WL_POINTER_AXIS_SOURCE_FINGER);
+	  else
+	    /* A device without finger or edge scrolling is a wheel
+	       (or a mouse in button-scrolling mode).  Declare the
+	       source explicitly; some clients ignore value120 events
+	       when no source was ever announced.  */
+	    wl_pointer_send_axis_source (pointer->resource,
+					 WL_POINTER_AXIS_SOURCE_WHEEL);
 	}
 
       if (axis_x != 0.0 || axis_y != 0.0
