@@ -151,6 +151,13 @@ struct _XdgToplevel
   /* The current window manager state.  */
   ToplevelState toplevel_state;
 
+  /* Whether the toplevel was maximized before it became fullscreen.  */
+  Bool maximized_before_fullscreen;
+
+  /* Timer used to restore the maximized state after leaving fullscreen.  */
+  Timer *restore_maximized_timer;
+  int restore_maximized_retries;
+
   /* All resize callbacks currently posted.  */
   XLList *resize_callbacks;
 
@@ -374,6 +381,9 @@ DestroyBacking (XdgToplevel *toplevel)
   /* If there is a pending configuration timer, remove it.  */
   if (toplevel->configuration_timer)
     RemoveTimer (toplevel->configuration_timer);
+
+  if (toplevel->restore_maximized_timer)
+    RemoveTimer (toplevel->restore_maximized_timer);
 
   if (toplevel->parent_callback)
     CancelUnmapCallback (toplevel->parent_callback);
@@ -745,6 +755,69 @@ RecordStateSize (XdgToplevel *toplevel)
     }
 }
 
+static void SetWmState (XdgToplevel *, Atom, Atom, How);
+
+/* Restoring the maximized state immediately after removing fullscreen
+   is unreliable: some window managers ignore the maximize request
+   while they are still processing the fullscreen removal.  Retry it
+   shortly afterwards instead.  */
+
+#define RestoreMaximizedDelayNanoseconds 50000000
+#define RestoreMaximizedMaxRetries 20
+
+static void
+RestoreMaximizedTime (Timer *timer, void *data, struct timespec time)
+{
+  XdgToplevel *toplevel;
+
+  toplevel = data;
+  RemoveTimer (timer);
+  toplevel->restore_maximized_timer = NULL;
+
+  if (!toplevel->maximized_before_fullscreen)
+    return;
+
+  if (toplevel->toplevel_state.fullscreen)
+    goto retry;
+
+  if (toplevel->toplevel_state.maximized)
+    {
+      toplevel->maximized_before_fullscreen = False;
+      return;
+    }
+
+  if (toplevel->state & StateIsMapped)
+    {
+      if (getenv ("TWELVE_TO_ELEVEN_DEBUG_FULLSCREEN"))
+	fprintf (stderr, "[fs] retry-restore-maximized toplevel=%p\n",
+		 (void *) toplevel);
+
+      SetWmState (toplevel, _NET_WM_STATE_MAXIMIZED_HORZ,
+		  _NET_WM_STATE_MAXIMIZED_VERT, Add);
+    }
+
+ retry:
+  if (++toplevel->restore_maximized_retries < RestoreMaximizedMaxRetries)
+    toplevel->restore_maximized_timer
+      = AddTimer (RestoreMaximizedTime, toplevel,
+		  MakeTimespec (0, RestoreMaximizedDelayNanoseconds));
+  else
+    toplevel->maximized_before_fullscreen = False;
+}
+
+static void
+ScheduleRestoreMaximized (XdgToplevel *toplevel)
+{
+  if (!toplevel->maximized_before_fullscreen
+      || toplevel->restore_maximized_timer)
+    return;
+
+  toplevel->restore_maximized_retries = 0;
+  toplevel->restore_maximized_timer
+    = AddTimer (RestoreMaximizedTime, toplevel,
+		MakeTimespec (0, RestoreMaximizedDelayNanoseconds));
+}
+
 static void
 HandleWmStateChange (XdgToplevel *toplevel)
 {
@@ -795,7 +868,41 @@ HandleWmStateChange (XdgToplevel *toplevel)
 	state->maximized = True;
     }
 
-  if (memcmp (&old, &state, sizeof *state)
+  /* Some window managers clear the maximized state when leaving
+     fullscreen.  Restore it if the window was maximized before it
+     became fullscreen.  */
+
+  /* If the window is already maximized again, the restore worked.  */
+  if (!state->fullscreen && state->maximized
+      && toplevel->maximized_before_fullscreen)
+    {
+      toplevel->maximized_before_fullscreen = False;
+
+      if (toplevel->restore_maximized_timer)
+	{
+	  RemoveTimer (toplevel->restore_maximized_timer);
+	  toplevel->restore_maximized_timer = NULL;
+	}
+    }
+
+  if (!old.fullscreen && state->fullscreen && old.maximized)
+    toplevel->maximized_before_fullscreen = True;
+  else if (old.fullscreen && !state->fullscreen)
+    {
+      if (toplevel->maximized_before_fullscreen && !state->maximized)
+	{
+	  if (getenv ("TWELVE_TO_ELEVEN_DEBUG_FULLSCREEN"))
+	    fprintf (stderr, "[fs] restore-maximized toplevel=%p\n",
+		     (void *) toplevel);
+
+	  ScheduleRestoreMaximized (toplevel);
+	}
+    }
+
+  DebugFullscreenToplevel (toplevel, "wm-state",
+			   toplevel->width, toplevel->height);
+
+  if (memcmp (&old, state, sizeof *state)
       && !MaybePostDelayedConfigure (toplevel,
 				     StatePendingConfigureStates))
     /* Finally, send states if they changed.  */
@@ -1275,6 +1382,12 @@ Unmap (XdgToplevel *toplevel)
     RemoveTimer (toplevel->configuration_timer);
   toplevel->configuration_timer = NULL;
 
+  if (toplevel->restore_maximized_timer)
+    RemoveTimer (toplevel->restore_maximized_timer);
+  toplevel->restore_maximized_timer = NULL;
+  toplevel->maximized_before_fullscreen = False;
+  toplevel->restore_maximized_retries = 0;
+
   XLListFree (toplevel->resize_callbacks,
 	      XLSeatCancelResizeCallback);
   toplevel->resize_callbacks = NULL;
@@ -1289,9 +1402,6 @@ Unmap (XdgToplevel *toplevel)
   /* Run unmap callbacks.  */
   RunUnmapCallbacks (toplevel);
 }
-
-/* Forward declaration.  */
-static void SetWmState (XdgToplevel *, Atom, Atom, How);
 
 static void
 Map (XdgToplevel *toplevel)
@@ -2373,12 +2483,19 @@ SetFullscreen (struct wl_client *client, struct wl_resource *resource,
     }
 
   if (toplevel->state & StateIsMapped)
-    SetWmState (toplevel, _NET_WM_STATE_FULLSCREEN, None, Add);
+    {
+      toplevel->maximized_before_fullscreen
+	= toplevel->toplevel_state.maximized;
+      SetWmState (toplevel, _NET_WM_STATE_FULLSCREEN, None, Add);
+    }
   else
     {
       toplevel->state &= ~StateUnfullscreenOnMap;
       toplevel->state |= StateFullscreenOnMap;
     }
+
+  DebugFullscreenToplevel (toplevel, "set-fullscreen-out",
+			   toplevel->width, toplevel->height);
 }
 
 static void
@@ -2404,12 +2521,22 @@ UnsetFullscreen (struct wl_client *client, struct wl_resource *resource)
     }
 
   if (toplevel->state & StateIsMapped)
-    SetWmState (toplevel, _NET_WM_STATE_FULLSCREEN, None, Remove);
+    {
+      SetWmState (toplevel, _NET_WM_STATE_FULLSCREEN, None, Remove);
+
+      /* Ask for the maximized state back once the window manager has
+	 finished processing the fullscreen removal.  */
+      if (toplevel->maximized_before_fullscreen)
+	ScheduleRestoreMaximized (toplevel);
+    }
   else
     {
       toplevel->state &= ~StateFullscreenOnMap;
       toplevel->state |= StateUnfullscreenOnMap;
     }
+
+  DebugFullscreenToplevel (toplevel, "unset-fullscreen-out",
+			   toplevel->width, toplevel->height);
 }
 
 static void
