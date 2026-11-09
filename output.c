@@ -607,7 +607,7 @@ SendUpdates (Output *output, int difference)
 
       if (difference & ModesChanged)
 	{
-	  for (tem1 = output->modes; tem1; tem1 = tem->next)
+	  for (tem1 = output->modes; tem1; tem1 = tem1->next)
 	    SendMode (tem1->data, tem->data);
 	}
 
