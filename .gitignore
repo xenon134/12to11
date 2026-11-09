@@ -1,0 +1,41 @@
+# Build artifacts
+*.o
+*.d
+12to11
+Makefile
+Makefile.bak
+12to11._man
+12to11.tar.gz
+shaders.h
+
+# Generated lookup tables
+short_types.txt
+transfer_atoms.h
+drm_modifiers.h
+
+# wayland-scanner output
+*-v1.c
+*-v1.h
+*-v3.c
+*-v3.h
+12to11-test.c
+12to11-test.h
+xdg-shell.c
+xdg-shell.h
+viewporter.c
+viewporter.h
+
+# Test build artifacts
+tests/*.o
+tests/Makefile
+tests/Makefile.bak
+tests/*_test
+tests/test_harness
+tests/imgview
+
+# Editor and filesystem debris
+.fuse_hidden*
+*~
+*.orig
+*.rej
+*.log
