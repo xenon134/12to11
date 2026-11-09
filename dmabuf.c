@@ -1138,6 +1138,7 @@ void
 XLInitDmabuf (void)
 {
   ssize_t size;
+  const char *force_v3;
 
   /* First, initialize supported formats.  */
   if (!ReadSupportedFormats ())
@@ -1146,12 +1147,20 @@ XLInitDmabuf (void)
   /* And try to create the format table.  */
   size = WriteFormatTable ();
 
+  /* The version 4 feedback code is incomplete, and some clients abort
+     when it advertises a format/modifier that the create path then
+     rejects.  Advertise version 3 (which uses the older per-format
+     modifier events) when TWELVE_TO_ELEVEN_DMABUF_V3 is set, so the
+     GPU path can be tried without patching the feedback code.  */
+  force_v3 = getenv ("TWELVE_TO_ELEVEN_DMABUF_V3");
+
   global_dmabuf = wl_global_create (compositor.wl_display,
 				    &zwp_linux_dmabuf_v1_interface,
 				    /* If writing the format table
 				       failed, don't announce support
 				       for version 4.  */
-				    size >= 0 ? 4 : 3, NULL, HandleBind);
+				    (size >= 0 && !force_v3) ? 4 : 3,
+				    NULL, HandleBind);
 
   /* If the format table was successfully created, set its size.  */
   format_table_size = size;
