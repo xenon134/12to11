@@ -583,6 +583,13 @@ ApplyScale (Surface *surface)
 
   d = b * e;
 
+  /* Apply the preferred fractional scale, if the client has one.
+     This makes the view (X window) larger than the surface size by
+     the fractional factor, so that the client's buffer is displayed
+     at its intended physical size.  */
+  if (surface->fractional_scale > 0)
+    d *= surface->fractional_scale;
+
   if (surface->factor != d)
     {
       /* The scale factor changed.  */
@@ -606,6 +613,25 @@ ApplyScale (Surface *surface)
 	    role->funcs.rescale (role->surface, role);
 	}
     }
+}
+
+/* Forward declarations for the scale-dependent state appliers below.  */
+static void ApplyOpaqueRegion (Surface *);
+static void ApplyInputRegion (Surface *);
+static void ApplyViewport (Surface *);
+
+/* Exported wrapper for ApplyScale, used when the fractional scale is
+   set outside of a buffer scale commit.  The client usually sets its
+   initial viewport and input region before creating the fractional
+   scale object, so all scale-dependent state must be reapplied; only
+   calling ApplyScale would leave them at the old 1x scale.  */
+void
+XLSurfaceApplyScale (Surface *surface)
+{
+  ApplyScale (surface);
+  ApplyInputRegion (surface);
+  ApplyOpaqueRegion (surface);
+  ApplyViewport (surface);
 }
 
 static void

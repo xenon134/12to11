@@ -1141,6 +1141,10 @@ struct _Surface
   /* The key for the window scalling factor callback.  */
   void *scale_callback_key;
 
+  /* The preferred fractional scale of this surface, or 0 if the
+     client did not create a wp_fractional_scale_v1 object.  */
+  double fractional_scale;
+
   /* X, Y of the last coordinates that were used to update this
      surface's entered outputs.  */
   int output_x, output_y;
@@ -1225,6 +1229,7 @@ extern UnmapCallback *XLSurfaceRunAtUnmap (Surface *, void (*) (void *),
 extern void XLSurfaceCancelUnmapCallback (UnmapCallback *);
 extern DestroyCallback *XLSurfaceRunOnFree (Surface *, void (*) (void *),
 					    void *);
+extern void XLSurfaceApplyScale (Surface *);
 extern void XLSurfaceCancelRunOnFree (DestroyCallback *);
 extern void *XLSurfaceGetClientData (Surface *, ClientDataType,
 				     size_t, void (*) (void *));
@@ -1828,6 +1833,7 @@ extern BufferTransform InvertTransform (BufferTransform);
 /* Defined in wp_viewporter.c.  */
 
 extern void XLInitWpViewporter (void);
+extern void XLInitFractionalScale (void);
 extern void XLWpViewportReportBadSize (ViewportExt *);
 extern void XLWpViewportReportOutOfBuffer (ViewportExt *);
 

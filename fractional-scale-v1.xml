@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="fractional_scale_v1">
+  <interface name="wp_fractional_scale_manager_v1" version="1">
+    <description summary="fractional scale information manager">
+      This global informs clients about the preferred fractional scale of
+      their surfaces.
+    </description>
+    <request name="destroy" type="destructor">
+      <description summary="destroy the fractional scale manager object"/>
+    </request>
+    <request name="get_fractional_scale">
+      <description summary="extend surface interface for scale information"/>
+      <arg name="id" type="new_id" interface="wp_fractional_scale_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+  </interface>
+  <interface name="wp_fractional_scale_v1" version="1">
+    <description summary="fractional scale information for a wl_surface">
+      An object that provides the preferred fractional scale of a surface.
+    </description>
+    <request name="destroy" type="destructor">
+      <description summary="destroy the fractional scale object"/>
+    </request>
+    <event name="preferred_scale">
+      <description summary="notify of new preferred scale"/>
+      <arg name="scale" type="uint" summary="preferred scale factor, multiplied by 120"/>
+    </event>
+  </interface>
+</protocol>

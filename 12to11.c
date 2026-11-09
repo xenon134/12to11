@@ -258,6 +258,7 @@ XLMain (int argc, char **argv)
   XLInitPrimarySelection ();
   XLInitExplicitSynchronization ();
   XLInitWpViewporter ();
+  XLInitFractionalScale ();
   XLInitDecoration ();
   XLInitTextInput ();
   XLInitSinglePixelBuffer ();
