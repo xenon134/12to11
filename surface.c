@@ -615,7 +615,7 @@ ApplyOpaqueRegion (Surface *surface)
 
   /* These regions, along with the global damage, must be multipled by
      the global scale factor.  */
-  if (global_scale_factor == 1)
+  if (surface->factor == 1.0)
     ViewSetOpaque (surface->view,
 		   &surface->current_state.opaque);
   else
@@ -635,7 +635,7 @@ ApplyInputRegion (Surface *surface)
 
   /* These regions, along with the global damage, must be multipled by
      the global scale factor.  */
-  if (global_scale_factor == 1)
+  if (surface->factor == 1.0)
     ViewSetInput (surface->view,
 		  &surface->current_state.input);
   else
@@ -860,7 +860,7 @@ ApplySurfaceDamage (Surface *surface)
   /* These regions, along with the global damage, must be multipled by
      the global scale factor.  */
 
-  if (global_scale_factor == 1)
+  if (surface->factor == 1.0)
     ViewDamage (surface->view,
 		&surface->current_state.surface);
   else
