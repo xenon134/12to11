@@ -24,6 +24,7 @@ along with 12to11.  If not, see <https://www.gnu.org/licenses/>.  */
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include <iconv.h>
 
@@ -416,11 +417,60 @@ SendDecorationConfigure1 (XdgToplevel *toplevel)
   toplevel->state |= StateDecorationModeDirty;
 }
 
+/* Temporary, env-gated logging for the fullscreen geometry bug.  */
+static void
+DebugFullscreenToplevel (XdgToplevel *toplevel, const char *where,
+			 int width, int height)
+{
+  Subcompositor *subcompositor;
+  struct timespec now;
+  int min_x, min_y, max_x, max_y, sub_width, sub_height;
+
+  if (!getenv ("TWELVE_TO_ELEVEN_DEBUG_FULLSCREEN"))
+    return;
+
+  subcompositor = NULL;
+  min_x = min_y = max_x = max_y = 0;
+  sub_width = sub_height = 0;
+
+  if (toplevel->role && toplevel->role->surface
+      && toplevel->role->surface->view)
+    {
+      subcompositor
+	= ViewGetSubcompositor (toplevel->role->surface->view);
+
+      if (subcompositor)
+	{
+	  SubcompositorBounds (subcompositor, &min_x, &min_y,
+			       &max_x, &max_y);
+	  sub_width = SubcompositorWidth (subcompositor);
+	  sub_height = SubcompositorHeight (subcompositor);
+	}
+    }
+
+  clock_gettime (CLOCK_MONOTONIC, &now);
+  fprintf (stderr,
+	   "[fs] %ld.%03ld %s toplevel=%p win=%lu state=%s%s "
+	   "size=%dx%d configure=%d,%d send=%dx%d sub=%dx%d "
+	   "bounds=%d,%d..%d,%d\n",
+	   (long) now.tv_sec, now.tv_nsec / 1000000, where,
+	   (void *) toplevel,
+	   (unsigned long) (toplevel->role
+			    ? XLWindowFromXdgRole (toplevel->role) : 0),
+	   toplevel->toplevel_state.fullscreen ? "fullscreen" : "",
+	   toplevel->toplevel_state.maximized ? "maximized" : "",
+	   toplevel->width, toplevel->height, toplevel->configure_width,
+	   toplevel->configure_height, width, height, sub_width,
+	   sub_height, min_x, min_y, max_x, max_y);
+}
+
 static void
 SendConfigure (XdgToplevel *toplevel, unsigned int width,
 	       unsigned int height)
 {
   uint32_t serial;
+
+  DebugFullscreenToplevel (toplevel, "send-configure", width, height);
 
   serial = wl_display_next_serial (compositor.wl_display);
   xdg_toplevel_send_configure (toplevel->resource, width, height,
@@ -891,6 +941,8 @@ HandleWindowGeometryChange (XdgToplevel *toplevel)
 			 &width, &height);
   TruncateSurfaceToWindow (toplevel->role->surface, x, y, &x, &y);
 
+  DebugFullscreenToplevel (toplevel, "geometry-in", width, height);
+
   dx = SubcompositorWidth (subcompositor) - width;
   dy = SubcompositorHeight (subcompositor) - height;
 
@@ -944,6 +996,8 @@ HandleWindowGeometryChange (XdgToplevel *toplevel)
   XSetWMNormalHints (compositor.display,
 		     XLWindowFromXdgRole (toplevel->role),
 		     hints);
+
+  DebugFullscreenToplevel (toplevel, "geometry-out", width, height);
 }
 
 static Bool
@@ -2266,6 +2320,9 @@ SetFullscreen (struct wl_client *client, struct wl_resource *resource,
 
   toplevel = wl_resource_get_user_data (resource);
 
+  DebugFullscreenToplevel (toplevel, "set-fullscreen-in",
+			   toplevel->width, toplevel->height);
+
   if (toplevel->toplevel_state.fullscreen)
     {
       /* The toplevel is already fullscreen to the best of our
@@ -2292,6 +2349,9 @@ UnsetFullscreen (struct wl_client *client, struct wl_resource *resource)
   XdgToplevel *toplevel;
 
   toplevel = wl_resource_get_user_data (resource);
+
+  DebugFullscreenToplevel (toplevel, "unset-fullscreen-in",
+			   toplevel->width, toplevel->height);
 
   if (!toplevel->toplevel_state.fullscreen)
     {

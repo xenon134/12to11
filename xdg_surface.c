@@ -21,6 +21,7 @@ along with 12to11.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "compositor.h"
 #include "xdg-shell.h"
@@ -920,6 +921,63 @@ CurrentRootPosition (XdgRole *role, int *root_x, int *root_y)
 			 0, 0, root_x, root_y, &child_return);
 }
 
+/* Temporary, env-gated logging for the fullscreen geometry bug.  */
+static void
+DebugFullscreenWindow (XdgRole *role, const char *where)
+{
+  static unsigned long last_hash;
+  Window root, child;
+  int x, y, root_x, root_y;
+  unsigned int width, height, border, depth;
+  unsigned long hash;
+  struct timespec now;
+
+  if (!getenv ("TWELVE_TO_ELEVEN_DEBUG_FULLSCREEN"))
+    return;
+
+  if (!XGetGeometry (compositor.display, role->window, &root,
+		     &x, &y, &width, &height, &border, &depth))
+    return;
+
+  child = None;
+  root_x = root_y = 0;
+  XTranslateCoordinates (compositor.display, role->window,
+			 DefaultRootWindow (compositor.display),
+			 0, 0, &root_x, &root_y, &child);
+
+  hash = 1469598103934665603UL;
+#define MIX(v) hash = (hash ^ (unsigned long) (v)) * 1099511628211UL
+  MIX (role->window);
+  MIX (role->bounds_width);
+  MIX (role->bounds_height);
+  MIX (role->min_x);
+  MIX (role->min_y);
+  MIX (role->max_x);
+  MIX (role->max_y);
+  MIX (width);
+  MIX (height);
+  MIX (x);
+  MIX (y);
+  MIX (root_x);
+  MIX (root_y);
+  MIX (role->state);
+#undef MIX
+
+  if (hash == last_hash)
+    return;
+
+  last_hash = hash;
+  clock_gettime (CLOCK_MONOTONIC, &now);
+  fprintf (stderr,
+	   "[fs] %ld.%03ld %s win=%lu geom=%ux%u+%d+%d root=%d,%d "
+	   "bounds=%dx%d role_min=%d,%d role_max=%d,%d state=%x\n",
+	   (long) now.tv_sec, now.tv_nsec / 1000000, where,
+	   (unsigned long) role->window, width, height, x, y,
+	   root_x, root_y, role->bounds_width, role->bounds_height,
+	   role->min_x, role->min_y, role->max_x, role->max_y,
+	   (unsigned int) role->state);
+}
+
 static void
 NoteBounds (void *data, int min_x, int min_y,
 	    int max_x, int max_y)
@@ -931,6 +989,8 @@ NoteBounds (void *data, int min_x, int min_y,
   role = data;
   run_reconstrain_callbacks = False;
   root_position_initialized = False;
+
+  DebugFullscreenWindow (role, "note-bounds-in");
 
   if (role->state & StateWaitingForAckCommit)
     /* Don't resize the window until all configure events are
@@ -1040,6 +1100,8 @@ NoteBounds (void *data, int min_x, int min_y,
   /* Run reconstrain callbacks if a resize happened.  */
   if (run_reconstrain_callbacks)
     RunReconstrainCallbacks (role);
+
+  DebugFullscreenWindow (role, "note-bounds-out");
 }
 
 static void
@@ -1507,6 +1569,13 @@ XLXdgRoleCalcNewWindowSize (Role *role, int width, int height,
 
   *new_width = width - temp;
   *new_height = height - temp1;
+
+  if (getenv ("TWELVE_TO_ELEVEN_DEBUG_FULLSCREEN"))
+    fprintf (stderr,
+	     "[fs] calc in=%dx%d current=%dx%d geometry=%dx%d "
+	     "new=%dx%d\n",
+	     width, height, current_width, current_height,
+	     geometry_width, geometry_height, *new_width, *new_height);
 
 #ifdef DEBUG_GEOMETRY_CALCULATION
   fprintf (stderr,

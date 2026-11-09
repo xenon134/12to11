@@ -21,6 +21,7 @@ along with 12to11.  If not, see <https://www.gnu.org/licenses/>.  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <alloca.h>
+#include <time.h>
 
 #include "compositor.h"
 
@@ -2691,6 +2692,43 @@ SubcompositorComposite1 (Subcompositor *subcompositor,
   Bool success, presented;
   RenderCompletionKey key;
 
+  if (getenv ("TWELVE_TO_ELEVEN_DEBUG_BOUNDS"))
+    {
+      static int last_min_x = 1000000, last_min_y = 1000000;
+      static int last_neg = -1;
+      int neg;
+
+      neg = 0;
+
+      for (list = subcompositor->inferiors->next;
+	   list != subcompositor->inferiors; list = list->next)
+	if (list->view
+	    && (list->view->abs_x < 0 || list->view->abs_y < 0))
+	  neg = 1;
+
+      if (subcompositor->min_x != last_min_x
+	  || subcompositor->min_y != last_min_y
+	  || neg != last_neg)
+	{
+	  fprintf (stderr, "composite: min=%d,%d max=%d,%d tx=%d,%d neg=%d\n",
+		   subcompositor->min_x, subcompositor->min_y,
+		   subcompositor->max_x, subcompositor->max_y,
+		   subcompositor->tx, subcompositor->ty, neg);
+
+	  for (list = subcompositor->inferiors->next;
+	       list != subcompositor->inferiors; list = list->next)
+	    if (list->view)
+	      fprintf (stderr, "  view abs=%d,%d size=%dx%d unmapped=%d\n",
+		       list->view->abs_x, list->view->abs_y,
+		       list->view->width, list->view->height,
+		       IsViewUnmapped (list->view));
+
+	  last_min_x = subcompositor->min_x;
+	  last_min_y = subcompositor->min_y;
+	  last_neg = neg;
+	}
+    }
+
   /* Draw the first view by copying.  */
   op = OperationSource;
   pixman_region32_init (&copy);
@@ -3040,6 +3078,113 @@ EndFrame (Subcompositor *subcompositor)
     }
 }
 
+static unsigned long
+DebugFullscreenHash (unsigned long hash, long value)
+{
+  return (hash ^ (unsigned long) value) * 1099511628211UL;
+}
+
+/* Temporary, env-gated logging for the fullscreen geometry bug.  */
+static void
+DebugFullscreenSubcompositor (Subcompositor *subcompositor,
+			      const char *where)
+{
+  static unsigned long last_hash;
+  static unsigned int last_seq;
+  struct timespec now;
+  unsigned long hash;
+  List *list;
+  unsigned int count;
+  int width, height;
+
+  if (!getenv ("TWELVE_TO_ELEVEN_DEBUG_FULLSCREEN"))
+    return;
+
+  width = SubcompositorWidth (subcompositor);
+  height = SubcompositorHeight (subcompositor);
+
+  hash = 1469598103934665603UL;
+  hash = DebugFullscreenHash (hash, subcompositor->min_x);
+  hash = DebugFullscreenHash (hash, subcompositor->min_y);
+  hash = DebugFullscreenHash (hash, subcompositor->max_x);
+  hash = DebugFullscreenHash (hash, subcompositor->max_y);
+  hash = DebugFullscreenHash (hash, subcompositor->tx);
+  hash = DebugFullscreenHash (hash, subcompositor->ty);
+  hash = DebugFullscreenHash (hash, width);
+  hash = DebugFullscreenHash (hash, height);
+
+  count = 0;
+  for (list = subcompositor->inferiors->next;
+       list != subcompositor->inferiors; list = list->next)
+    {
+      View *view;
+
+      view = list->view;
+
+      if (!view)
+	continue;
+
+      count++;
+      hash = DebugFullscreenHash (hash, view->abs_x);
+      hash = DebugFullscreenHash (hash, view->abs_y);
+      hash = DebugFullscreenHash (hash, view->x);
+      hash = DebugFullscreenHash (hash, view->y);
+      hash = DebugFullscreenHash (hash, view->width);
+      hash = DebugFullscreenHash (hash, view->height);
+      hash = DebugFullscreenHash (hash, view->scale);
+      hash = DebugFullscreenHash (hash, (long) (view->fract_x * 1000));
+      hash = DebugFullscreenHash (hash, (long) (view->fract_y * 1000));
+      hash = DebugFullscreenHash (hash, IsViewUnmapped (view));
+      hash = DebugFullscreenHash (hash, IsViewported (view));
+      hash = DebugFullscreenHash (hash, view->buffer
+				  ? XLBufferWidth (view->buffer) : 0);
+      hash = DebugFullscreenHash (hash, view->buffer
+				  ? XLBufferHeight (view->buffer) : 0);
+    }
+
+  if (hash == last_hash)
+    return;
+
+  last_hash = hash;
+  last_seq++;
+
+  clock_gettime (CLOCK_MONOTONIC, &now);
+  fprintf (stderr,
+	   "[fs] %ld.%03ld #%u %s sub=%p min=%d,%d max=%d,%d "
+	   "size=%dx%d tx=%d,%d views=%u\n",
+	   (long) now.tv_sec, now.tv_nsec / 1000000, last_seq, where,
+	   (void *) subcompositor, subcompositor->min_x,
+	   subcompositor->min_y, subcompositor->max_x,
+	   subcompositor->max_y, width, height, subcompositor->tx,
+	   subcompositor->ty, count);
+
+  for (list = subcompositor->inferiors->next;
+       list != subcompositor->inferiors; list = list->next)
+    {
+      View *view;
+      unsigned int bw, bh;
+
+      view = list->view;
+
+      if (!view)
+	continue;
+
+      bw = view->buffer ? XLBufferWidth (view->buffer) : 0;
+      bh = view->buffer ? XLBufferHeight (view->buffer) : 0;
+
+      fprintf (stderr,
+	       "  [fs] view=%p abs=%d,%d rel=%d,%d size=%dx%d "
+	       "buf=%ux%u scale=%d fract=%.3f,%.3f viewport=%d "
+	       "src=%.2f,%.2f crop=%.2f,%.2f dest=%.2f,%.2f unmapped=%d\n",
+	       (void *) view, view->abs_x, view->abs_y, view->x, view->y,
+	       view->width, view->height, bw, bh, view->scale,
+	       view->fract_x, view->fract_y, IsViewported (view),
+	       view->src_x, view->src_y, view->crop_width,
+	       view->crop_height, view->dest_width, view->dest_height,
+	       IsViewUnmapped (view));
+    }
+}
+
 void
 SubcompositorUpdate (Subcompositor *subcompositor)
 {
@@ -3047,6 +3192,8 @@ SubcompositorUpdate (Subcompositor *subcompositor)
 
   if (!IsTargetAttached (subcompositor))
     return;
+
+  DebugFullscreenSubcompositor (subcompositor, "update");
 
   if (subcompositor->note_bounds)
     subcompositor->note_bounds (subcompositor->note_bounds_data,
