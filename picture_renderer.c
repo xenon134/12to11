@@ -1674,6 +1674,12 @@ MaybeApplyTransform (PictureBuffer *buffer, DrawParams *params)
 				  &transform);
     }
 
+  /* Use bilinear filtering for fractional scaling.  XRender defaults
+     to nearest-neighbour, which drops and duplicates rows/columns at
+     1.1x and makes the window look janky.  */
+  XRenderSetPictureFilter (compositor.display, buffer->picture,
+			   FilterBilinear, NULL, 0);
+
   /* Save the parameters into buffer.  */
   buffer->params = *params;
 }
