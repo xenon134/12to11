@@ -1304,6 +1304,8 @@ FindProvider (RRProvider id)
       if (!(device->flags & IsRemoved)
 	  && device->provider == id)
 	return device;
+
+      device = device->next;
     }
 
   return NULL;
