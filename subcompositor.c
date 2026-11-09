@@ -633,6 +633,16 @@ ViewMaxY (View *view)
   return view->abs_y + view->height - 1;
 }
 
+/* The origin of a window subcompositor is always its top-left corner.
+   Subsurfaces must be clipped to the parent surface, so a subsurface
+   with a negative position (Chromium places its link status bubble at
+   x = -2) must not move the origin and shift the entire window.  */
+static int
+ClampOrigin (int value)
+{
+  return value < 0 ? 0 : value;
+}
+
 static Bool
 ViewIsMapped (View *view)
 {
@@ -679,7 +689,7 @@ SubcompositorUpdateBounds (Subcompositor *subcompositor, int doflags)
 	  if ((doflags & DoMinX) && min_x > list->view->abs_x)
 	    min_x = list->view->abs_x;
 
-	  if ((doflags & DoMinY) && min_x > list->view->abs_y)
+	  if ((doflags & DoMinY) && min_y > list->view->abs_y)
 	    min_y = list->view->abs_y;
 
 	  if ((doflags & DoMaxX) && max_x < ViewMaxX (list->view))
@@ -692,6 +702,11 @@ SubcompositorUpdateBounds (Subcompositor *subcompositor, int doflags)
     next:
       list = list->next;
     }
+
+  /* Do not let subsurfaces positioned outside the parent surface
+     change the window origin.  */
+  min_x = ClampOrigin (min_x);
+  min_y = ClampOrigin (min_y);
 
   if (doflags & DoMinX)
     {
@@ -737,7 +752,7 @@ SubcompositorUpdateBoundsForInsert (Subcompositor *subcompositor,
 
   if (view->abs_x < subcompositor->min_x)
     {
-      subcompositor->min_x = view->abs_x;
+      subcompositor->min_x = ClampOrigin (view->abs_x);
 
       /* Garbage the subcompositor for this change.  */
       SetGarbaged (subcompositor);
@@ -745,7 +760,7 @@ SubcompositorUpdateBoundsForInsert (Subcompositor *subcompositor,
 
   if (view->abs_y < view->subcompositor->min_y)
     {
-      subcompositor->min_y = view->abs_y;
+      subcompositor->min_y = ClampOrigin (view->abs_y);
 
       /* Garbage the subcompositor for this change.  */
       SetGarbaged (subcompositor);
@@ -1003,15 +1018,15 @@ ViewRecomputeChildren (View *view, int *doflags)
 	    {
 	      if (child->abs_x < view->subcompositor->min_x)
 		{
-		  view->subcompositor->min_x = child->abs_x;
+		  view->subcompositor->min_x = ClampOrigin (child->abs_x);
 
 		  if (doflags)
 		    *doflags &= ~DoMinX;
 		}
 
-	      if (child->abs_x < view->subcompositor->min_y)
+	      if (child->abs_y < view->subcompositor->min_y)
 		{
-		  view->subcompositor->min_y = child->abs_y;
+		  view->subcompositor->min_y = ClampOrigin (child->abs_y);
 
 		  if (doflags)
 		    *doflags &= ~DoMinY;
@@ -1452,7 +1467,7 @@ ViewMove (View *view, int x, int y)
       else
 	{
 	  view->abs_x = x;
-	  view->abs_y = x;
+	  view->abs_y = y;
 	}
 
       if (view->subcompositor && ViewVisibilityState (view, &mapped)
@@ -1469,7 +1484,7 @@ ViewMove (View *view, int x, int y)
 
 	  if (view->abs_x < view->subcompositor->min_x)
 	    {
-	      view->subcompositor->min_x = view->abs_x;
+	      view->subcompositor->min_x = ClampOrigin (view->abs_x);
 
 	      /* min_x has already been updated so there is no need to
 		 recompute it later.  */
@@ -1480,9 +1495,9 @@ ViewMove (View *view, int x, int y)
 	      SetGarbaged (view->subcompositor);
 	    }
 
-	  if (view->abs_y < view->subcompositor->min_x)
+	  if (view->abs_y < view->subcompositor->min_y)
 	    {
-	      view->subcompositor->min_y = view->abs_y;
+	      view->subcompositor->min_y = ClampOrigin (view->abs_y);
 
 	      /* min_y has already been updated so there is no need to
 		 recompute it later.  */
