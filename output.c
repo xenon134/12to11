@@ -1041,6 +1041,59 @@ XLOutputGetMinRefresh (struct timespec *timespec)
   timespec->tv_sec = (between - timespec->tv_nsec) / 1000000000;
 }
 
+void
+XLOutputGetRefreshForWindow (Window window, struct timespec *timespec)
+{
+  XWindowAttributes attrs;
+  Window child;
+  int root_x, root_y, center_x, center_y;
+  Output *output;
+  XLList *list;
+  double refresh, best, between;
+
+  /* Find the output underneath the center of the window, and use its
+     refresh rate for the static frame timer.  Picking the slowest
+     output overall would pace a window on a fast display at the rate
+     of an unrelated slow display, adding avoidable input latency.  */
+
+  if (XGetWindowAttributes (compositor.display, window, &attrs)
+      && XTranslateCoordinates (compositor.display, window,
+				DefaultRootWindow (compositor.display),
+				0, 0, &root_x, &root_y, &child))
+    {
+      center_x = root_x + attrs.width / 2;
+      center_y = root_y + attrs.height / 2;
+      best = 0.0;
+
+      for (list = all_outputs; list; list = list->next)
+	{
+	  output = list->data;
+
+	  if (center_x >= output->x
+	      && center_x < output->x + output->width
+	      && center_y >= output->y
+	      && center_y < output->y + output->height)
+	    {
+	      refresh = GetCurrentRefresh (output);
+
+	      if (refresh > best)
+		best = refresh;
+	    }
+	}
+
+      if (best > 0.0)
+	{
+	  between = 1.0 / best;
+	  timespec->tv_nsec = MIN (1000000000, between * 1000000000);
+	  timespec->tv_sec = (between - timespec->tv_nsec) / 1000000000;
+	  return;
+	}
+    }
+
+  /* No output could be determined; fall back to the slowest one.  */
+  XLOutputGetMinRefresh (timespec);
+}
+
 static void
 RunScaleChangeCallbacks (void)
 {

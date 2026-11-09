@@ -1255,6 +1255,7 @@ extern int global_scale_factor;
 extern void XLInitRROutputs (void);
 extern Bool XLHandleOneXEventForOutputs (XEvent *);
 extern void XLOutputGetMinRefresh (struct timespec *);
+extern void XLOutputGetRefreshForWindow (Window, struct timespec *);
 extern Bool XLGetOutputRectAt (int, int, int *, int *, int *, int *);
 extern void *XLAddScaleChangeCallback (void *, void (*) (void *, int));
 extern void XLRemoveScaleChangeCallback (void *);

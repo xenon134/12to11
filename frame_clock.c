@@ -759,7 +759,7 @@ XLMakeFrameClockForWindow (Window window)
   /* Set this to an invalid value.  */
   clock->frame_timings_id = -1;
 
-  XLOutputGetMinRefresh (&default_refresh_rate);
+  XLOutputGetRefreshForWindow (window, &default_refresh_rate);
 
   XSyncIntToValue (&initial_value, 0);
 
