@@ -751,17 +751,10 @@ ApplyViewport (Surface *surface)
 	  || src_y + crop_height - 1 >= max_height / state->buffer_scale))
     goto out_of_buffer;
 
-  /* Finally, set the viewport.  Convert the values to window
-     coordinates.  */
-  src_x *= surface->factor;
-  src_y *= surface->factor;
-
-  if (crop_width != -1)
-    {
-      crop_width *= surface->factor;
-      crop_height *= surface->factor;
-    }
-
+  /* Finally, set the viewport.  The source rectangle and crop size
+     are in buffer pixels (Chromium sends the full buffer size here),
+     so they must not be scaled; only the destination, which is in
+     surface coordinates, is converted to window coordinates.  */
   dest_width *= surface->factor;
   dest_height *= surface->factor;
 
